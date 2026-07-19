@@ -49,16 +49,16 @@ one OpenAI-compatible client against `https://dashscope-intl.aliyuncs.com/compat
 
 ## The agent loop
 
-1. **Snapshot preload** — 5 parallel FHIR searches, sanitized and truncated to ~9 KB,
-   injected into the system prompt. Cuts most turns to 1–2 reasoning rounds.
-2. **Bounded tool loop** — max 5 rounds, OpenAI-style `tool_calls`:
-   - `search_fhir` / `read_fhir` — execute immediately, results PHI-sanitized before
+1. **Snapshot preload**: 5 parallel FHIR searches, sanitized and truncated to ~9 KB,
+   injected into the system prompt. Cuts most turns to 1-2 reasoning rounds.
+2. **Bounded tool loop**: max 5 rounds, OpenAI-style `tool_calls`:
+   - `search_fhir` / `read_fhir` execute immediately,, results PHI-sanitized before
      re-entering context.
-   - `propose_write` — **never executes**. The action is queued as a `ProposedAction`
+   - `propose_write` **never executes**. The action is queued as a `ProposedAction`
      with a plain-English summary for the clinician.
-3. **Confirmation** — the UI renders narrated proposals; `/api/agent/execute` performs
+3. **Confirmation**: the UI renders narrated proposals; `/api/agent/execute` performs
    the write only on explicit confirm, then appends to the audit log.
-4. **Telemetry** — every FHIR op, reasoning round (with real token usage from
+4. **Telemetry**: every FHIR op, reasoning round (with real token usage from
    `resp.usage`), and proposal is emitted as a structured `AgentEvent`, streamed into the
    Live System Console in the UI.
 
@@ -75,11 +75,11 @@ ever skips the tool call.
 
 The model reasons **only over coded, de-identified data**:
 
-- `src/lib/phi/isolate.ts` builds `ModelContext`: codes, values, banded age, sex — no
+- `src/lib/phi/isolate.ts` builds `ModelContext`: codes, values, banded age, sex. No
   name, MRN, DOB, address, or free-text notes.
 - `src/lib/agent/sanitize.ts` strips identifiers from every FHIR resource/bundle before
   it enters model context.
-- `src/lib/phi/isolate.test.ts` is the enforcement gate (6 assertions) — CI-red if PHI
+- `src/lib/phi/isolate.test.ts` is the enforcement gate (6 assertions): CI-red if PHI
   could reach the model payload.
 
 ## Failure handling
@@ -89,11 +89,11 @@ The model reasons **only over coded, de-identified data**:
 - Mock-FHIR failover (`NEXT_PUBLIC_USE_MOCK_FHIR=true`) keeps the demo alive if the
   public sandbox is down.
 - Epic sandbox write restrictions (ServiceRequest/MedicationRequest creation is
-  production-gated) are handled gracefully — the agent reports what it could not write.
+  production-gated) are handled gracefully: the agent reports what it could not write.
 
 ## Provenance
 
 Atlas began as an EHR-copilot hackathon project on a different model provider; for the
 Global AI Hackathon with Qwen Cloud the entire model layer was ported to Qwen on Alibaba
-Cloud Model Studio (agent loop, forced-function drafting, streaming, and OCR — the OCR
+Cloud Model Studio (agent loop, forced-function drafting, streaming, and OCR; the OCR
 path replaced a former Azure Document Intelligence dependency entirely).

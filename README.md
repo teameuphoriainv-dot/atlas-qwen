@@ -1,15 +1,15 @@
-# Atlas — Autonomous EHR Copilot on Qwen
+# Atlas: Autonomous EHR Copilot on Qwen
 
-> Say the order. Atlas does the work — you confirm the writes.
+> Say the order. Atlas does the work. You confirm the writes.
 
-**Global AI Hackathon with Qwen Cloud — Track 4: Autopilot Agent.**
+**Global AI Hackathon with Qwen Cloud. Track 4: Autopilot Agent.**
 
 Atlas automates a real clinical business workflow end-to-end: a clinician types (or speaks)
-plain-English intent — *"order a CBC and start metformin 500mg BID"*, *"any care gaps?"*,
-*"summarize this patient"* — and an agentic loop powered by **Qwen on Alibaba Cloud Model
+plain-English intent, *"order a CBC and start metformin 500mg BID"*, *"any care gaps?"*,
+*"summarize this patient"*, and an agentic loop powered by **Qwen on Alibaba Cloud Model
 Studio** reads the live FHIR chart, reasons over it, drafts correctly-coded actions
 (LOINC / SNOMED / RxNorm), and queues every chart mutation behind a **human-in-the-loop
-confirm gate** with a full audit log. The model **never receives raw PHI** — it reasons
+confirm gate** with a full audit log. The model **never receives raw PHI**: it reasons
 only over de-identified, coded data, and that boundary is enforced by tests.
 
 ## Why this is an Autopilot Agent (Track 4)
@@ -25,12 +25,12 @@ only over de-identified, coded data, and that boundary is enforced by tests.
 
 All model inference runs on **Alibaba Cloud Model Studio (DashScope)**:
 
-- **[`src/lib/llm/qwen.ts`](src/lib/llm/qwen.ts)** — the single client every model call goes
+- **[`src/lib/llm/qwen.ts`](src/lib/llm/qwen.ts)**: the single client every model call goes
   through, pointed at `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`.
-- [`src/lib/agent/runAgent.ts`](src/lib/agent/runAgent.ts) — agentic FHIR tool-loop on **qwen-plus**.
-- [`src/lib/agent/draftOrders.ts`](src/lib/agent/draftOrders.ts) — forced tool-call structured
+- [`src/lib/agent/runAgent.ts`](src/lib/agent/runAgent.ts): agentic FHIR tool-loop on **qwen-plus**.
+- [`src/lib/agent/draftOrders.ts`](src/lib/agent/draftOrders.ts): forced tool-call structured
   order drafting (+ SSE-streamed narration) on **qwen-max**.
-- [`src/app/api/vision/route.ts`](src/app/api/vision/route.ts) — EHR-screenshot OCR on **qwen-vl-max**.
+- [`src/app/api/vision/route.ts`](src/app/api/vision/route.ts): EHR-screenshot OCR on **qwen-vl-max**.
 
 ## Architecture
 
@@ -81,9 +81,9 @@ time. Deeper details: [`docs/architecture.md`](docs/architecture.md).
 ## Stack
 
 - **Qwen** (qwen-max / qwen-plus / qwen-vl-max) on **Alibaba Cloud Model Studio**, via the
-  OpenAI-compatible DashScope endpoint — tool calling, forced function calls, streaming
+  OpenAI-compatible DashScope endpoint: tool calling, forced function calls, streaming
 - **Next.js 16** (App Router) + **Tailwind v4**, API routes only (no DB; in-memory audit)
-- **FHIR R4** — public HAPI sandbox (synthetic patients, zero real PHI) + Epic sandbox
+- **FHIR R4**: public HAPI sandbox (synthetic patients, zero real PHI) + Epic sandbox
   through the Chrome extension's SMART-on-FHIR (PKCE) token
 
 ## Setup
@@ -121,11 +121,11 @@ QWEN_API_KEY=sk-... npx vitest run draftOrders
 
 ## Safety model
 
-- **Confirm-before-write** — nothing reaches the chart without an explicit click.
-- **PHI isolation** — only coded context (codes, values, banded age) is sent to Qwen;
+- **Confirm-before-write**: nothing reaches the chart without an explicit click.
+- **PHI isolation**: only coded context (codes, values, banded age) is sent to Qwen;
   names/MRN/DOB stay server-side. Enforced by `src/lib/phi/isolate.test.ts` (6 assertions).
-- **No guessed doses** — ambiguous medication orders become clarifying questions.
-- **Bounded agency** — the tool-loop is capped at 5 rounds and 5 proposals per turn.
+- **No guessed doses**: ambiguous medication orders become clarifying questions.
+- **Bounded agency**: the tool-loop is capped at 5 rounds and 5 proposals per turn.
 
 ## Demo
 
