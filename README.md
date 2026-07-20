@@ -4,6 +4,8 @@
 
 **Global AI Hackathon with Qwen Cloud. Track 4: Autopilot Agent.**
 
+**Live demo: https://atlas-qwen.vercel.app** (synthetic patients; zero setup)
+
 Atlas automates a real clinical business workflow end-to-end: a clinician types (or speaks)
 plain-English intent, *"order a CBC and start metformin 500mg BID"*, *"any care gaps?"*,
 *"summarize this patient"*, and an agentic loop powered by **Qwen on Alibaba Cloud Model
