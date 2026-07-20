@@ -16,10 +16,10 @@ only over de-identified, coded data, and that boundary is enforced by tests.
 
 | Track requirement | How Atlas delivers |
 |---|---|
-| Handles ambiguous inputs | Free-text clinical intent → structured drafts; ambiguous med orders (missing dose) become clarifying questions, never guesses |
+| Handles ambiguous inputs | Free-text clinical intent → structured drafts; ambiguous med orders (missing dose) become clarifying questions, never guesses; even a photographed paper med list becomes structured, reconciled proposals (Qwen-VL) |
 | Invokes external tools | Agent tool-loop over live FHIR R4 (`search_fhir` / `read_fhir` / `propose_write`) against the HAPI sandbox, plus Epic SMART-on-FHIR via the Chrome extension |
 | Human-in-the-loop checkpoints | Every write is proposed, narrated, and executed **only after clinician confirmation**; in-memory audit log records every action |
-| Production-readiness | PHI-isolation enforced by a test suite, typed env validation (Zod), retry-hardened FHIR client, live telemetry console, mock-FHIR failover |
+| Production-readiness | Layered safety: a second-model **Qwen Safety Sentinel** adversarially reviews every proposed write (allergy conflicts, interactions, duplicates) before the clinician sees it; PHI-isolation enforced by tests; typed env validation; retry-hardened FHIR client; live telemetry console; mock-FHIR failover |
 
 ## Proof of Alibaba Cloud
 
@@ -30,7 +30,9 @@ All model inference runs on **Alibaba Cloud Model Studio (DashScope)**:
 - [`src/lib/agent/runAgent.ts`](src/lib/agent/runAgent.ts): agentic FHIR tool-loop on **qwen-plus**.
 - [`src/lib/agent/draftOrders.ts`](src/lib/agent/draftOrders.ts): forced tool-call structured
   order drafting (+ SSE-streamed narration) on **qwen-max**.
-- [`src/app/api/vision/route.ts`](src/app/api/vision/route.ts): EHR-screenshot OCR on **qwen-vl-max**.
+- [`src/app/api/vision/route.ts`](src/app/api/vision/route.ts): OCR + structured med-list extraction on **qwen-vl-max**.
+- [`src/lib/llm/router.ts`](src/lib/llm/router.ts): smart model router across **qwen-turbo / qwen-plus / qwen-max** by request complexity.
+- [`src/lib/agent/sentinel.ts`](src/lib/agent/sentinel.ts): the **Qwen Safety Sentinel**, an independent qwen-max reviewer that adversarially audits every proposed chart write.
 
 ## Architecture
 
@@ -51,9 +53,10 @@ flowchart LR
     end
 
     subgraph Alibaba["Alibaba Cloud Model Studio"]
+        QT["qwen-turbo<br/>simple asks"]
         QP["qwen-plus<br/>agent loop"]
-        QM["qwen-max<br/>order drafting"]
-        QV["qwen-vl-max<br/>OCR"]
+        QM["qwen-max<br/>drafting + Safety Sentinel"]
+        QV["qwen-vl-max<br/>OCR + med-list extraction"]
     end
 
     subgraph FHIR["FHIR R4"]
@@ -64,17 +67,23 @@ flowchart LR
     UI --> AGENT & DRAFT & VISION
     UI -- "clinician confirms" --> EXEC
     EXT --> AGENT
-    AGENT --> PHI --> QP
-    DRAFT --> PHI --> QM
+    AGENT --> ROUTER["smart router"]
+    ROUTER --> PHI
+    PHI --> QT & QP & QM
+    AGENT -- "proposed writes" --> SENTINEL["Qwen Safety Sentinel<br/>(rules + adversarial qwen-max)"]
+    SENTINEL --> QM
+    DRAFT --> PHI
     VISION --> QV
     AGENT -- "search/read" --> HAPI & EPIC
     EXEC -- "write after confirm" --> HAPI & EPIC
     EXEC --> AUDIT
 ```
 
-The agent loop: preload a PHI-stripped chart snapshot (5 parallel FHIR searches) → Qwen
-reasons and calls tools (bounded, 5 rounds max) → reads auto-execute, **writes only queue**
-→ clinician reviews narrated proposals → one click executes and audits them. A live system
+The agent loop: the smart router picks a Qwen tier for the request → preload a PHI-stripped
+chart snapshot (5 parallel FHIR searches) → Qwen reasons and calls tools (bounded, 5 rounds
+max) → reads auto-execute, **writes only queue** → the Safety Sentinel (deterministic rules
++ an independent adversarial qwen-max review) attaches a verdict to every proposal →
+clinician reviews narrated, safety-badged proposals → one click executes and audits them. A live system
 console in the UI streams every FHIR op, reasoning round, token count, and latency in real
 time. Deeper details: [`docs/architecture.md`](docs/architecture.md).
 
@@ -126,6 +135,12 @@ QWEN_API_KEY=sk-... npx vitest run draftOrders
   names/MRN/DOB stay server-side. Enforced by `src/lib/phi/isolate.test.ts` (6 assertions).
 - **No guessed doses**: ambiguous medication orders become clarifying questions.
 - **Bounded agency**: the tool-loop is capped at 5 rounds and 5 proposals per turn.
+- **Second-model review**: the Qwen Safety Sentinel independently audits every proposed
+  write for allergy conflicts, interactions, duplicate therapy, and wrong codes; verdicts
+  (pass / warn / block) are shown on each proposal card. Fail-open to "unreviewed", never
+  a silent pass, and the human confirm gate always stands.
+- **Deterministic rule layer**: allergy and duplicate checks run in code (unit-tested),
+  independent of any model.
 
 ## Demo
 

@@ -20,6 +20,8 @@ const KIND_STYLE: Record<TelemetryKind, { tag: string; cls: string }> = {
   fhir: { tag: "FHIR", cls: "text-emerald-300" },
   reason: { tag: "THINK", cls: "text-violet-300" },
   propose: { tag: "PROPOSE", cls: "text-amber-300" },
+  route: { tag: "ROUTE", cls: "text-cyan-300" },
+  sentinel: { tag: "GUARD", cls: "text-rose-300" },
   write: { tag: "WRITE", cls: "text-emerald-200" },
   info: { tag: "INFO", cls: "text-slate-400" },
 };

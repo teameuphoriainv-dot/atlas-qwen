@@ -1,18 +1,22 @@
 import type OpenAI from "openai";
-import { qwenClient, qwenModels } from "@/lib/llm/qwen";
+import { qwenClient } from "@/lib/llm/qwen";
+import { routeAgentModel } from "@/lib/llm/router";
 import { FHIR_TOOLS, buildAgentSystemPrompt } from "./fhirTools";
 import { sanitize, sanitizeBundle } from "./sanitize";
 import type { FhirClient } from "@/lib/fhir/remote";
+import type { SafetyReview } from "./sentinel";
 
 export interface ProposedAction {
   resourceType: string;
   summary: string;
   resource: Record<string, unknown>;
+  /** Attached by the Qwen Safety Sentinel after the loop completes. */
+  safety?: SafetyReview;
 }
 
 /** A structured telemetry step for the Live System Console (real timings/labels). */
 export interface AgentEvent {
-  kind: "fhir" | "reason" | "propose";
+  kind: "fhir" | "reason" | "propose" | "route" | "sentinel";
   label: string;
   detail?: string;
   ms?: number;
@@ -50,8 +54,9 @@ export async function runAgent(opts: {
   fhir: FhirClient;
 }): Promise<AgentTurn> {
   const client = qwenClient();
-  // Fast model for the interactive agent loop (snappy demo).
-  const AGENT_MODEL = process.env.ATLAS_AGENT_MODEL || qwenModels().agent;
+  // Smart router: qwen-turbo/plus/max by request complexity (see lib/llm/router).
+  const route = routeAgentModel(opts.message);
+  const AGENT_MODEL = route.model;
 
   const proposedActions: ProposedAction[] = [];
   const toolLog: string[] = [];
@@ -59,6 +64,13 @@ export async function runAgent(opts: {
   let inputTokens = 0;
   let outputTokens = 0;
   let rounds = 0;
+
+  events.push({
+    kind: "route",
+    label: `router → ${route.model}`,
+    detail: `${route.tier} · ${route.reason}`,
+    status: "ok",
+  });
 
   // Pre-load a PHI-stripped chart snapshot so the agent reasons in 1-2 rounds
   // instead of many sequential searches (huge latency win).
@@ -98,6 +110,39 @@ export async function runAgent(opts: {
     { role: "user", content: opts.message },
   ];
 
+  /** Run the Qwen Safety Sentinel over proposed writes, then assemble the turn. */
+  async function finish(reply: string): Promise<AgentTurn> {
+    if (proposedActions.length > 0) {
+      const sentStart = Date.now();
+      const { reviewProposedActions } = await import("./sentinel");
+      const result = await reviewProposedActions(proposedActions, snapshot);
+      result.reviews.forEach((review, i) => {
+        proposedActions[i].safety = review;
+      });
+      const worst = result.reviews.reduce(
+        (acc, r) => (r.verdict === "block" ? "block" : r.verdict === "warn" && acc !== "block" ? "warn" : acc),
+        "pass" as string,
+      );
+      events.push({
+        kind: "sentinel",
+        label: `sentinel ${result.modelRan ? result.model : "rules-only"} · ${worst}`,
+        detail: result.reviews
+          .flatMap((r) => r.reasons)
+          .slice(0, 2)
+          .join("; ") || `${proposedActions.length} action(s) reviewed`,
+        ms: Date.now() - sentStart,
+        status: worst === "block" ? "error" : "ok",
+      });
+    }
+    return {
+      reply,
+      proposedActions,
+      toolLog,
+      events,
+      usage: { inputTokens, outputTokens, rounds },
+    };
+  }
+
   for (let round = 0; round < 5; round++) {
     const roundStart = Date.now();
     const resp = await client.chat.completions.create({
@@ -124,14 +169,7 @@ export async function runAgent(opts: {
     );
 
     if (!msg || toolCalls.length === 0) {
-      const reply = (msg?.content ?? "").trim();
-      return {
-        reply,
-        proposedActions,
-        toolLog,
-        events,
-        usage: { inputTokens, outputTokens, rounds },
-      };
+      return finish((msg?.content ?? "").trim());
     }
 
     messages.push({
@@ -181,11 +219,5 @@ export async function runAgent(opts: {
     }
   }
 
-  return {
-    reply: "I gathered a lot but hit the step limit — ask me to continue.",
-    proposedActions,
-    toolLog,
-    events,
-    usage: { inputTokens, outputTokens, rounds },
-  };
+  return finish("I gathered a lot but hit the step limit — ask me to continue.");
 }

@@ -38,9 +38,10 @@ sequenceDiagram
 
 | Path | Model | Why |
 |------|-------|-----|
-| Agent loop (`src/lib/agent/runAgent.ts`) | `qwen-plus` | Latency-sensitive interactive loop; tool calling |
+| Agent loop (`src/lib/agent/runAgent.ts`) | routed: `qwen-turbo` / `qwen-plus` / `qwen-max` | The smart router (`src/lib/llm/router.ts`) classifies each request; simple read-only asks go fast/cheap, complex clinical reasoning (care gaps, interactions, reconciliation) gets the strongest tier. The decision is emitted to the Live System Console |
+| Safety Sentinel (`src/lib/agent/sentinel.ts`) | `qwen-max` | Independent adversarial reviewer of every proposed write; a different model instance than the agent, so the author never grades its own homework |
 | Order drafting (`src/lib/agent/draftOrders.ts`) | `qwen-max` | Highest-accuracy coded output (LOINC/RxNorm), forced function call |
-| OCR (`src/app/api/vision/route.ts`) | `qwen-vl-max` | Multimodal transcription of EHR screenshots |
+| OCR + med extraction (`src/app/api/vision/route.ts`) | `qwen-vl-max` | Multimodal transcription and structured medication-list extraction |
 
 Client construction is centralized in [`src/lib/llm/qwen.ts`](../src/lib/llm/qwen.ts):
 one OpenAI-compatible client against `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`
@@ -58,9 +59,19 @@ one OpenAI-compatible client against `https://dashscope-intl.aliyuncs.com/compat
      with a plain-English summary for the clinician.
 3. **Confirmation**: the UI renders narrated proposals; `/api/agent/execute` performs
    the write only on explicit confirm, then appends to the audit log.
-4. **Telemetry**: every FHIR op, reasoning round (with real token usage from
-   `resp.usage`), and proposal is emitted as a structured `AgentEvent`, streamed into the
-   Live System Console in the UI.
+4. **Safety Sentinel**: when the loop finishes with proposed writes, two independent
+   layers review them before the clinician sees anything:
+   - a deterministic rule layer (unit-tested, model-free): allergy-name conflicts and
+     exact-code duplicate therapy against the chart snapshot;
+   - an adversarial `qwen-max` review via forced function call: drug-drug interactions,
+     cross-reactivity classes, contraindications vs active problems, implausible doses,
+     code/summary mismatches.
+   The worse verdict wins (`pass` < `warn` < `block`); reasons are attached to each
+   proposal and rendered as badges in the UI. The sentinel fails open to `unreviewed`
+   (never a silent pass) and never bypasses the human confirm gate.
+5. **Telemetry**: every routing decision, FHIR op, reasoning round (with real token usage
+   from `resp.usage`), proposal, and sentinel verdict is emitted as a structured
+   `AgentEvent`, streamed into the Live System Console in the UI.
 
 ## Structured order drafting
 
@@ -70,6 +81,15 @@ The streaming variant streams the `narration` field (first in the schema, so it 
 first in the argument stream) over SSE for perceived speed, then returns the complete
 drafts. A tolerant parser falls back to extracting JSON from text content if the model
 ever skips the tool call.
+
+## Multimodal med reconciliation
+
+A photo of the patient's home medication list (pill bottles, handwriting, printouts) is
+sent to `qwen-vl-max` in structured mode, which returns
+`{medications: [{name, dose, frequency}]}`. The extracted list is fed to the agent as a
+reconciliation request, so the proposals flow through the exact same pipeline as typed
+input: bounded tool loop, then Safety Sentinel, then clinician confirm, then audit. One
+button in the chat input triggers the whole chain.
 
 ## PHI isolation (production-readiness core)
 

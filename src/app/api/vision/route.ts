@@ -8,7 +8,32 @@ export const maxDuration = 60;
 const bodySchema = z.object({
   // base64 image (raw or a data URL — normalized to a data URL below).
   image: z.string().min(1),
+  // "text" = plain OCR transcription; "meds" = structured medication-list
+  // extraction for reconciliation (returns { meds: [...] } as well as text).
+  mode: z.enum(["text", "meds"]).default("text"),
 });
+
+const MEDS_PROMPT =
+  "This is a photo of a patient's medication list (pill bottles, a handwritten list, or a printout). " +
+  "Extract every medication as JSON. Output ONLY a JSON object of the shape " +
+  '{"medications":[{"name":"...","dose":"...","frequency":"..."}]} with no commentary and no markdown fences. ' +
+  'Use empty strings for unreadable dose/frequency. If no medications are visible, output {"medications":[]}.';
+
+interface ExtractedMed {
+  name?: string;
+  dose?: string;
+  frequency?: string;
+}
+
+function parseMeds(raw: string): ExtractedMed[] {
+  try {
+    const m = raw.match(/\{[\s\S]*\}/);
+    const parsed = JSON.parse(m ? m[0] : raw) as { medications?: ExtractedMed[] };
+    return (parsed.medications ?? []).filter((x) => x.name).slice(0, 30);
+  } catch {
+    return [];
+  }
+}
 
 /**
  * OCR via Qwen-VL (multimodal) on Alibaba Cloud Model Studio — replaces the
@@ -27,6 +52,12 @@ export async function POST(req: NextRequest) {
 
   try {
     const client = qwenClient();
+    const mode = parsed.data.mode;
+    const prompt =
+      mode === "meds"
+        ? MEDS_PROMPT
+        : "Transcribe ALL text visible in this image exactly as written, preserving line breaks and layout order. " +
+          "Output ONLY the transcribed text — no commentary, no markdown fences.";
     const resp = await client.chat.completions.create({
       model: qwenModels().vision,
       max_tokens: 2000,
@@ -34,18 +65,16 @@ export async function POST(req: NextRequest) {
         {
           role: "user",
           content: [
-            {
-              type: "text",
-              text:
-                "Transcribe ALL text visible in this image exactly as written, preserving line breaks and layout order. " +
-                "Output ONLY the transcribed text — no commentary, no markdown fences.",
-            },
+            { type: "text", text: prompt },
             { type: "image_url", image_url: { url: dataUrl } },
           ],
         },
       ],
     });
     const text = (resp.choices[0]?.message?.content ?? "").trim();
+    if (mode === "meds") {
+      return NextResponse.json({ text, meds: parseMeds(text) });
+    }
     return NextResponse.json({ text });
   } catch (e) {
     return NextResponse.json(

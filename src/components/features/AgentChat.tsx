@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Sparkles, Send, FlaskConical, ListPlus, Activity, FileText, ShieldAlert, ClipboardList } from "lucide-react";
+import { Sparkles, Send, FlaskConical, ListPlus, Activity, FileText, ShieldAlert, ClipboardList, Camera } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { mdToHtml } from "@/lib/markdown";
 import { emit, streamBackendEvents, type BackendEvent } from "@/lib/telemetry";
@@ -11,7 +11,16 @@ interface ProposedAction {
   resourceType: string;
   summary: string;
   resource: Record<string, unknown>;
+  safety?: { verdict: "pass" | "warn" | "block" | "unreviewed"; reasons: string[] };
 }
+
+/** Badge style per Qwen Safety Sentinel verdict. */
+const SAFETY_STYLE: Record<string, { label: string; cls: string }> = {
+  pass: { label: "Sentinel ✓", cls: "bg-success/10 text-success" },
+  warn: { label: "Sentinel ⚠ review", cls: "bg-warning/15 text-warning" },
+  block: { label: "Sentinel ✕ flagged", cls: "bg-error/10 text-error" },
+  unreviewed: { label: "Sentinel offline", cls: "bg-surface-alt text-text-muted" },
+};
 interface Msg {
   role: "user" | "atlas";
   text: string;
@@ -191,6 +200,51 @@ export function AgentChat({ patientId, patientName, context, onWriteComplete }: 
     setMessages((m) => m.map((x, i) => (i === idx ? { ...x, actions: [], status: "rejected", result: "Rejected." } : x)));
   }
 
+  /**
+   * Med-list reconciliation: photo → Qwen-VL structured extraction → the agent
+   * reconciles against the chart and proposes confirm-gated writes (which the
+   * Safety Sentinel then reviews). Full multimodal pipeline, one button.
+   */
+  async function reconcileFromPhoto(file: File) {
+    if (!patientId || busy) return;
+    setBusy(true);
+    emit({ kind: "info", label: "Qwen-VL extracting medication list…", detail: file.name });
+    try {
+      const image = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("Could not read image"));
+        reader.readAsDataURL(file);
+      });
+      const r = await fetch("/api/vision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image, mode: "meds" }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? "Extraction failed");
+      const meds = (d.meds ?? []) as { name: string; dose?: string; frequency?: string }[];
+      if (meds.length === 0) {
+        setMessages((m) => [...m, { role: "atlas", text: "I couldn't find any medications in that image. Try a clearer photo of the med list." }]);
+        return;
+      }
+      emit({ kind: "info", label: `Qwen-VL extracted ${meds.length} medication(s)`, status: "ok" });
+      const list = meds
+        .map((x) => [x.name, x.dose, x.frequency].filter(Boolean).join(" "))
+        .join("; ");
+      setBusy(false);
+      await ask(
+        `I photographed the patient's home medication list. It contains: ${list}. ` +
+          "Reconcile it against the chart: propose adding anything missing, and point out discrepancies (different dose, duplicates, or chart meds absent from the list). Do not guess missing doses.",
+      );
+      return;
+    } catch (e) {
+      setMessages((m) => [...m, { role: "atlas", text: "Error: " + (e instanceof Error ? e.message : "photo reconciliation failed") }]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function saveNote(idx: number) {
     if (!context) return;
     const note = { title: "Atlas note", text: messages[idx].text, at: Date.now() };
@@ -256,14 +310,33 @@ export function AgentChat({ patientId, patientName, context, onWriteComplete }: 
                 )}
                 {m.actions && m.actions.length > 0 && (
                   <div className="self-start w-[90%] flex flex-col gap-1.5">
-                    {m.actions.map((a, j) => (
-                      <div key={j} className="rounded-md border border-border bg-surface p-2">
-                        <div className="text-[10px] font-bold uppercase tracking-wide text-info">
-                          {a.resourceType}
+                    {m.actions.map((a, j) => {
+                      const safety = a.safety ? SAFETY_STYLE[a.safety.verdict] : null;
+                      return (
+                        <div key={j} className="rounded-md border border-border bg-surface p-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-[10px] font-bold uppercase tracking-wide text-info">
+                              {a.resourceType}
+                            </div>
+                            {safety && (
+                              <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${safety.cls}`}>
+                                {safety.label}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-sm text-text">{a.summary}</div>
+                          {a.safety && a.safety.reasons.length > 0 && (
+                            <ul className="mt-1 flex flex-col gap-0.5">
+                              {a.safety.reasons.map((r, k) => (
+                                <li key={k} className="text-[11px] leading-snug text-warning">
+                                  ⚠ {r}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
                         </div>
-                        <div className="text-sm text-text">{a.summary}</div>
-                      </div>
-                    ))}
+                      );
+                    })}
                     {m.status === "done" || m.status === "error" || m.status === "rejected" ? (
                       <div className={`text-xs ${m.status === "done" ? "text-success" : "text-text-muted"}`}>
                         {m.result}
@@ -292,6 +365,22 @@ export function AgentChat({ patientId, patientName, context, onWriteComplete }: 
       </div>
 
       <div className="mt-2 flex items-end gap-2">
+        <label
+          className={`flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-md border border-border bg-surface text-text-muted transition-colors hover:border-primary hover:text-primary ${busy || !patientId ? "pointer-events-none opacity-50" : ""}`}
+          title="Reconcile meds from a photo (Qwen-VL)"
+        >
+          <Camera className="h-4 w-4" />
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) reconcileFromPhoto(f);
+            }}
+          />
+        </label>
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}

@@ -11,19 +11,19 @@ Record the screen at 1080p with voiceover; upload public to YouTube.
 - Open the **Live System Console** (bottom-left) before you start: it visualizes the agent's
   key logic in real time, which judges score directly.
 
-## 0:00-0:25 — The hook
+## 0:00-0:25: The hook
 > "Doctors spend more time fighting their EHR than talking to patients. Order entry is the
 > worst of it: endless menu-diving, dozens of times a day. Atlas is an autopilot agent for
 > that workflow, powered end-to-end by Qwen on Alibaba Cloud. You say what you want; the
 > agent reads the chart, does the work, and you confirm every write."
 
-## 0:25-0:50 — Orient
+## 0:25-0:50: Orient
 1. Show the workspace: "A live FHIR chart on the left; Atlas floats over it, like it would
    over any EHR."
 2. Point at the Live System Console: "Down here you can watch the agent think: every FHIR
    call, every Qwen reasoning round, real latencies and token counts."
 
-## 0:50-1:45 — The autopilot moment (ambiguous input → tools → human-in-the-loop)
+## 0:50-1:45: The autopilot moment (ambiguous input → tools → human-in-the-loop)
 3. Type (or use the mic):
    > `order a CBC and a chest x-ray, and start metformin 500mg BID`
 4. Narrate the console while it works: "Qwen-plus is running a bounded tool loop: it
@@ -36,20 +36,26 @@ Record the screen at 1080p with voiceover; upload public to YouTube.
    clinician clicks confirm. That's the human-in-the-loop checkpoint, and every action
    lands in the audit log."
 
-## 1:45-2:15 — Ambiguity handling + breadth
-7. Type `start lisinopril` (no dose) → Atlas asks a clarifying question instead of
+## 1:45-2:20: The Safety Sentinel + ambiguity
+7. Point at the safety badges on the proposal cards: "Before I ever saw those proposals,
+   a second, independent Qwen model, the Safety Sentinel, adversarially reviewed them:
+   allergy conflicts, interactions, duplicate therapy." If the chart has an allergy,
+   ask for a conflicting med and show the red flagged badge with its reason.
+8. Type `start lisinopril` (no dose) → Atlas asks a clarifying question instead of
    guessing. "Ambiguous input becomes a question, never a guessed dose."
-8. Quick-fire one more chip (care gaps or summarize): "Same agent, open-ended asks."
-9. Optional 10s: screenshot-OCR button → "That OCR is Qwen-VL, also on Alibaba Cloud."
+9. The camera button: upload a photo of a paper med list → "Qwen-VL reads the photo,
+   extracts structured medications, and the agent reconciles them against the chart.
+   Same confirm gate, same sentinel." (10-15s, cut if tight on time.)
 
-## 2:15-2:45 — Architecture flash
+## 2:15-2:45: Architecture flash
 10. Cut to the README architecture diagram for ~15 seconds:
-> "Everything model-side runs on Alibaba Cloud Model Studio: qwen-plus drives the agent
-> loop, qwen-max drafts structured orders through forced function calls, qwen-vl-max does
-> OCR. The backend is a thin Next.js layer over FHIR R4, with a PHI-isolation boundary
+> "Everything model-side runs on Alibaba Cloud Model Studio, and it is genuinely
+> multi-model: a smart router picks qwen-turbo, plus, or max per request (the ROUTE lines
+> in the console). qwen-max drafts structured orders and runs the adversarial Safety
+> Sentinel, and qwen-vl-max handles photos. The backend is a thin Next.js layer over FHIR R4, with a PHI-isolation boundary
 > between the chart and the model, enforced in CI."
 
-## 2:45-3:00 — The close
+## 2:45-3:00: The close
 > "Atlas speaks FHIR, so it works with any compliant EHR; we've also connected it to
 > Epic's sandbox through a Chrome extension with SMART-on-FHIR. This is what production
 > autopilot looks like in healthcare: real tools, real ambiguity, and a human holding the

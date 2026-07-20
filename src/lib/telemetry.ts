@@ -18,6 +18,8 @@ export type TelemetryKind =
   | "fhir" // a FHIR read/search executed server-side by the agent
   | "reason" // a model reasoning round
   | "propose" // the agent proposed a write (pending confirmation)
+  | "route" // the smart router picked a Qwen model tier for this turn
+  | "sentinel" // the Qwen Safety Sentinel reviewed proposed writes
   | "write" // a confirmed write committed to the chart
   | "info"; // a summary / annotation line
 
