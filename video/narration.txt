@@ -1,0 +1,13 @@
+Meet Atlas: an autopilot agent for the electronic health record. One model acts. Another model objects. And the clinician always holds the pen.
+
+Here's the problem. A doctor can say what they want in one sentence. But the software makes them click fourteen times to do it. Order entry, dozens of times a day. Clinicians now spend more of the day driving the record than talking to patients. So we built an agent that does the driving.
+
+Watch it work. The clinician just types: order a CBC and a chest x-ray, and start metformin five hundred milligrams twice daily. A smart router picks the right Qwen model. The agent reads the chart over FHIR, reasons over it, and drafts three correctly coded orders. It even cites the evidence: she's on lisinopril, she has type two diabetes, so metformin is appropriate. One click confirms, and the orders write back to the chart. And the model never saw a name, an MRN, or a date of birth. That boundary is enforced by a test that fails the build.
+
+But drafting is the easy part. Trust is the hard part. So before the clinician ever sees a proposal, a second, independent Qwen model reviews it. Layer one is deterministic code: allergy conflicts and duplicates, caught without a model. Layer two is qwen-max, prompted to refute. Here, the agent proposed amoxicillin for a patient with a documented penicillin allergy. The Sentinel catches the cross-reactivity, blocks it, and forces a deliberate override. The author never grades its own homework.
+
+Under the hood, Atlas orchestrates four Qwen models on Alibaba Cloud Model Studio. A router sends each request to turbo, plus, or max by complexity. qwen-max drafts orders and runs the Sentinel. And qwen-vl-max turns a photo of a paper medication list into structured, reconciled proposals. Reads auto-execute. Writes only ever queue. And the whole toolset is exposed over MCP, so any agent can reuse it.
+
+And then there's the unglamorous sixty percent that makes it real. PHI isolation, enforced in code. Structural validation at the write boundary. A tamper-evident, hash-chained audit log. Resilience on every model call. Evidence provenance on every claim. Thirty tests, green on every push.
+
+Because autonomy in medicine isn't one brilliant model. It's a system: a model that acts, a model that objects, deterministic rails around both, and a human holding the pen. Atlas. Built on Qwen, on Alibaba Cloud.

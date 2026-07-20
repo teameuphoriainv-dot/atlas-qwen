@@ -40,3 +40,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# video build artifacts
+video/node_modules
+video/out
+video/.claude-flow
