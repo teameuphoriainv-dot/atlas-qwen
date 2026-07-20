@@ -6,7 +6,9 @@ import {
   CheckCircle2,
   Database,
   Info,
+  Link2,
   ShieldCheck,
+  Sparkles,
   Stethoscope,
   X,
 } from "lucide-react";
@@ -16,9 +18,19 @@ const SEEN_KEY = "atlas_intro_seen_v1";
 
 const FEATURES = [
   {
+    icon: Sparkles,
+    title: "Multi-model Qwen orchestration",
+    body: "A smart router picks qwen-turbo, plus, or max per request; a second, independent Qwen model (the Safety Sentinel) adversarially reviews every proposed write before you see it.",
+  },
+  {
     icon: Database,
     title: "Built on real FHIR R4",
-    body: "Atlas reads the chart and writes coded orders as structured FHIR resources — live against Epic (SMART-on-FHIR) and HAPI.",
+    body: "Atlas reads the chart and writes coded orders as structured FHIR resources, live against Epic (SMART-on-FHIR) and HAPI, with a structural validator at the write boundary.",
+  },
+  {
+    icon: Link2,
+    title: "Evidence-linked answers",
+    body: "Replies cite the exact chart resources behind each claim. Click a citation chip and the chart section lights up.",
   },
   {
     icon: ShieldCheck,
@@ -27,13 +39,13 @@ const FEATURES = [
   },
   {
     icon: CheckCircle2,
-    title: "Clinician-confirmed & audited",
-    body: "Nothing is written without a one-click confirm. Every action is captured in an audit log.",
+    title: "Clinician-confirmed & tamper-evident audit",
+    body: "Nothing is written without an explicit confirm, flagged items require a deliberate override, and the audit log is hash-chained so history can't be silently altered.",
   },
   {
     icon: Activity,
-    title: "Watch it work — live",
-    body: "The Live System Console (bottom-left) streams every FHIR call and reasoning step in real time.",
+    title: "Watch it work, live",
+    body: "The Live System Console (bottom-left) streams routing decisions, FHIR calls, reasoning rounds, safety verdicts, tokens, and cost in real time.",
   },
 ];
 
@@ -116,11 +128,11 @@ export function InfoModal() {
                 </span>
               </div>
               <h2 id="atlas-intro-title" className="mt-1 text-2xl font-bold">
-                Atlas — Clinical AI on real FHIR
+                Atlas: an autopilot agent on Qwen
               </h2>
               <p className="mt-1 text-sm text-white/80">
-                An agent that reads the chart, reasons over it, and writes coded
-                orders — safely.
+                Reads the chart, reasons over it, and drafts coded chart actions.
+                A second AI reviews them. You hold the pen.
               </p>
             </div>
 

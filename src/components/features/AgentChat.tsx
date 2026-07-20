@@ -60,6 +60,24 @@ function traceChips(log: string[]): string[] {
   return [...new Set(out)].slice(0, 6);
 }
 
+/** Human stage line for the live working indicator, from a streamed AgentEvent. */
+function stageLabel(e: BackendEvent): string {
+  switch (e.kind) {
+    case "route":
+      return e.label.replace("router →", "routed to");
+    case "fhir":
+      return "reading the chart…";
+    case "reason":
+      return `thinking (${e.label.replace("reasoning ", "")})…`;
+    case "propose":
+      return "drafting a proposal…";
+    case "sentinel":
+      return "safety review…";
+    default:
+      return "working…";
+  }
+}
+
 /** Build a chart item (display/code) from a proposed action's FHIR resource. */
 function actionLabel(a: ProposedAction): { display: string; code: string; system: string } {
   const res = (a.resource ?? {}) as {
@@ -112,6 +130,7 @@ export function AgentChat({ patientId, patientName, context, onWriteComplete }: 
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [stage, setStage] = useState("");
   const threadRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -135,39 +154,85 @@ export function AgentChat({ patientId, patientName, context, onWriteComplete }: 
       const r = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: vitalsLine + text, patientId, history }),
+        body: JSON.stringify({ message: vitalsLine + text, patientId, history, stream: true }),
       });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error ?? "Agent failed");
-      // Surface the real server-side trace in the Live System Console.
-      if (Array.isArray(d.events)) {
-        streamBackendEvents(d.events as BackendEvent[]);
-        const u = d.usage ?? {};
+
+      if (r.headers.get("content-type")?.includes("text/event-stream") && r.body) {
+        // LIVE mode: agent events arrive as they happen — console + stage update in real time.
+        const reader = r.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        interface TurnPayload {
+          reply?: string;
+          proposedActions?: ProposedAction[];
+          toolLog?: string[];
+          usage?: { inputTokens?: number; outputTokens?: number; rounds?: number; estCostUsd?: number };
+        }
+        let turn: TurnPayload | null = null;
+        let streamError: string | null = null;
+
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const blocks = buf.split("\n\n");
+          buf = blocks.pop() ?? "";
+          for (const block of blocks) {
+            const ev = block.match(/^event: (.+)$/m)?.[1];
+            const dataRaw = block.match(/^data: (.+)$/m)?.[1];
+            if (!ev || !dataRaw) continue;
+            let data: unknown;
+            try {
+              data = JSON.parse(dataRaw);
+            } catch {
+              continue;
+            }
+            if (ev === "step") {
+              const e = data as BackendEvent;
+              emit(e);
+              setStage(stageLabel(e));
+            } else if (ev === "done") {
+              turn = data as TurnPayload;
+            } else if (ev === "error") {
+              streamError = String((data as { details?: string; error?: string }).details ?? (data as { error?: string }).error ?? "Agent failed");
+            }
+          }
+        }
+        if (streamError) throw new Error(streamError);
+        if (!turn) throw new Error("Stream ended without a result");
+
+        const u = turn.usage ?? {};
         const total = (u.inputTokens ?? 0) + (u.outputTokens ?? 0);
         if (total) {
           const cost =
             typeof u.estCostUsd === "number" && u.estCostUsd > 0
               ? ` · ~$${u.estCostUsd >= 0.01 ? u.estCostUsd.toFixed(3) : u.estCostUsd.toFixed(4)}`
               : "";
-          window.setTimeout(
-            () =>
-              emit({
-                kind: "info",
-                label: `${total.toLocaleString()} tokens · ${u.rounds ?? 0} round(s)${cost}`,
-                detail: `${u.inputTokens ?? 0} in / ${u.outputTokens ?? 0} out`,
-              }),
-            (d.events.length + 1) * 100,
-          );
+          emit({
+            kind: "info",
+            label: `${total.toLocaleString()} tokens · ${u.rounds ?? 0} round(s)${cost}`,
+            detail: `${u.inputTokens ?? 0} in / ${u.outputTokens ?? 0} out`,
+          });
         }
+        setMessages((m) => [
+          ...m,
+          { role: "atlas", text: turn!.reply || "(no reply)", actions: turn!.proposedActions || [], status: "", toolLog: turn!.toolLog || [] },
+        ]);
+      } else {
+        // Fallback: plain JSON (validation errors, or a non-streaming deployment).
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.details ?? d.error ?? "Agent failed");
+        if (Array.isArray(d.events)) streamBackendEvents(d.events as BackendEvent[]);
+        setMessages((m) => [
+          ...m,
+          { role: "atlas", text: d.reply || "(no reply)", actions: d.proposedActions || [], status: "", toolLog: d.toolLog || [] },
+        ]);
       }
-      setMessages((m) => [
-        ...m,
-        { role: "atlas", text: d.reply || "(no reply)", actions: d.proposedActions || [], status: "", toolLog: d.toolLog || [] },
-      ]);
     } catch (e) {
       setMessages((m) => [...m, { role: "atlas", text: "Error: " + (e instanceof Error ? e.message : "failed") }]);
     } finally {
       setBusy(false);
+      setStage("");
     }
   }
 
@@ -311,9 +376,14 @@ export function AgentChat({ patientId, patientName, context, onWriteComplete }: 
                             <div className="flex flex-wrap items-center gap-1">
                               <span className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Evidence</span>
                               {ev.refs.map((ref) => (
-                                <span key={ref} className="inline-flex items-center gap-1 rounded border border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] text-info">
+                                <button
+                                  key={ref}
+                                  onClick={() => window.dispatchEvent(new CustomEvent("atlas-evidence", { detail: { ref } }))}
+                                  title="Show in chart"
+                                  className="inline-flex cursor-pointer items-center gap-1 rounded border border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] text-info transition-colors hover:border-info hover:bg-info/5"
+                                >
                                   <Link2 className="h-2.5 w-2.5" /> {ref}
-                                </span>
+                                </button>
                               ))}
                             </div>
                           )}
@@ -397,7 +467,7 @@ export function AgentChat({ patientId, patientName, context, onWriteComplete }: 
             ))}
             {busy && (
               <div className="self-start flex items-center gap-1.5 rounded-lg bg-surface-alt px-3 py-2 text-sm text-text-muted">
-                <Sparkles className="h-3.5 w-3.5 animate-pulse text-primary" /> Atlas is working…
+                <Sparkles className="h-3.5 w-3.5 animate-pulse text-primary" /> {stage || "Atlas is working…"}
               </div>
             )}
           </div>

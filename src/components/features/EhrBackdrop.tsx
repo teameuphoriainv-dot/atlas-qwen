@@ -82,6 +82,39 @@ export function EhrBackdrop({ context, onContextChange }: Props) {
   const seenProblems = useRef<Set<string> | null>(null);
   const [newOrders, setNewOrders] = useState<Set<string>>(new Set());
   const [newProblems, setNewProblems] = useState<Set<string>>(new Set());
+  const [flashSection, setFlashSection] = useState<string | null>(null);
+
+  // Evidence chips in the Atlas chat dispatch "atlas-evidence" with a FHIR ref;
+  // flash + scroll the chart section that evidence lives in (Linked-Evidence UX).
+  useEffect(() => {
+    const SECTION_BY_TYPE: Record<string, string> = {
+      Condition: "problems",
+      MedicationRequest: "medications",
+      MedicationStatement: "medications",
+      AllergyIntolerance: "allergies",
+      Observation: "labs",
+      DiagnosticReport: "labs",
+      ServiceRequest: "orders",
+      Procedure: "orders",
+    };
+    let timer: number | undefined;
+    const onEvidence = (e: Event) => {
+      const ref = (e as CustomEvent<{ ref?: string }>).detail?.ref ?? "";
+      const section = SECTION_BY_TYPE[ref.split("/")[0]] ?? null;
+      if (!section) return;
+      setFlashSection(section);
+      document.getElementById(`ehr-sec-${section}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setFlashSection(null), 1800);
+    };
+    window.addEventListener("atlas-evidence", onEvidence);
+    return () => {
+      window.removeEventListener("atlas-evidence", onEvidence);
+      window.clearTimeout(timer);
+    };
+  }, []);
+  const flashCls = (key: string) =>
+    flashSection === key ? "rounded ring-2 ring-teal-400 ring-offset-2 ring-offset-slate-100 transition" : "transition";
 
   // Detect items added since the last context (refs read in the effect only).
   useEffect(() => {
@@ -132,9 +165,15 @@ export function EhrBackdrop({ context, onContextChange }: Props) {
       </div>
 
       <div className="grid flex-1 grid-cols-1 gap-3 overflow-auto p-4 lg:grid-cols-3">
-        <ChartCard title="Problem List" items={context?.problems ?? []} empty="No active problems" newKeys={newProblems} />
-        <ChartCard title="Medications" items={context?.medications ?? []} empty="No active medications" />
-        <ChartCard title="Allergies" items={context?.allergies ?? []} empty="NKDA" />
+        <div id="ehr-sec-problems" className={flashCls("problems")}>
+          <ChartCard title="Problem List" items={context?.problems ?? []} empty="No active problems" newKeys={newProblems} />
+        </div>
+        <div id="ehr-sec-medications" className={flashCls("medications")}>
+          <ChartCard title="Medications" items={context?.medications ?? []} empty="No active medications" />
+        </div>
+        <div id="ehr-sec-allergies" className={flashCls("allergies")}>
+          <ChartCard title="Allergies" items={context?.allergies ?? []} empty="NKDA" />
+        </div>
 
         <div className="lg:col-span-3">
           <div className="rounded border border-slate-200 bg-white">
@@ -160,7 +199,7 @@ export function EhrBackdrop({ context, onContextChange }: Props) {
           </div>
         </div>
 
-        <div className="lg:col-span-3">
+        <div id="ehr-sec-labs" className={`lg:col-span-3 ${flashCls("labs")}`}>
           <div className="rounded border border-slate-200 bg-white">
             <div className="border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
               Labs / Results
@@ -181,7 +220,7 @@ export function EhrBackdrop({ context, onContextChange }: Props) {
           </div>
         </div>
 
-        <div className="lg:col-span-3">
+        <div id="ehr-sec-orders" className={`lg:col-span-3 ${flashCls("orders")}`}>
           <div className="rounded border border-slate-200 bg-white">
             <div className="border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
               Orders

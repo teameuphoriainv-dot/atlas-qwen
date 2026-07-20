@@ -54,6 +54,8 @@ export async function runAgent(opts: {
   history?: { role: "user" | "assistant"; content: string }[];
   patientRef: string;
   fhir: FhirClient;
+  /** Called for every AgentEvent as it happens — enables live SSE streaming. */
+  onEvent?: (e: AgentEvent) => void;
 }): Promise<AgentTurn> {
   const client = qwenClient();
   // Smart router: qwen-turbo/plus/max by request complexity (see lib/llm/router).
@@ -63,12 +65,20 @@ export async function runAgent(opts: {
   const proposedActions: ProposedAction[] = [];
   const toolLog: string[] = [];
   const events: AgentEvent[] = [];
+  const pushEvent = (e: AgentEvent) => {
+    events.push(e);
+    try {
+      opts.onEvent?.(e);
+    } catch {
+      /* streaming must never break the loop */
+    }
+  };
   let inputTokens = 0;
   let outputTokens = 0;
   let rounds = 0;
   let estCostUsd = 0;
 
-  events.push({
+  pushEvent({
     kind: "route",
     label: `router → ${route.model}`,
     detail: `${route.tier} · ${route.reason}`,
@@ -96,7 +106,7 @@ export async function runAgent(opts: {
       orders: srv ? sanitizeBundle(srv) : null,
     }).slice(0, 9000);
     toolLog.push("search Condition", "search Observation", "search AllergyIntolerance");
-    events.push({
+    pushEvent({
       kind: "fhir",
       label: "Snapshot ×5 resources",
       detail: "Condition · Observation · Medication · Allergy · ServiceRequest",
@@ -126,7 +136,7 @@ export async function runAgent(opts: {
         (acc, r) => (r.verdict === "block" ? "block" : r.verdict === "warn" && acc !== "block" ? "warn" : acc),
         "pass" as string,
       );
-      events.push({
+      pushEvent({
         kind: "sentinel",
         label: `sentinel ${result.modelRan ? result.model : "rules-only"} · ${worst}`,
         detail: result.reviews
@@ -166,7 +176,7 @@ export async function runAgent(opts: {
       resp.usage?.prompt_tokens ?? 0,
       resp.usage?.completion_tokens ?? 0,
     );
-    events.push({
+    pushEvent({
       kind: "reason",
       label: `reasoning round ${round + 1}`,
       detail: `${resp.usage?.completion_tokens ?? 0} tok out · ${AGENT_MODEL}`,
@@ -201,7 +211,7 @@ export async function runAgent(opts: {
           toolLog.push(`search ${rt} ${q}`);
           const opStart = Date.now();
           const data = await opts.fhir.search(rt, q);
-          events.push({ kind: "fhir", label: `GET ${rt}`, detail: q || undefined, ms: Date.now() - opStart, status: "ok" });
+          pushEvent({ kind: "fhir", label: `GET ${rt}`, detail: q || undefined, ms: Date.now() - opStart, status: "ok" });
           push(JSON.stringify(sanitizeBundle(data)).slice(0, 9000));
         } else if (tc.function.name === "read_fhir") {
           const rt = String(input.resourceType);
@@ -209,7 +219,7 @@ export async function runAgent(opts: {
           toolLog.push(`read ${rt}/${id}`);
           const opStart = Date.now();
           const data = await opts.fhir.read(rt, id);
-          events.push({ kind: "fhir", label: `GET ${rt}/${id}`, ms: Date.now() - opStart, status: "ok" });
+          pushEvent({ kind: "fhir", label: `GET ${rt}/${id}`, ms: Date.now() - opStart, status: "ok" });
           push(JSON.stringify(sanitize(data)).slice(0, 6000));
         } else if (tc.function.name === "propose_write") {
           const action: ProposedAction = {
@@ -219,13 +229,13 @@ export async function runAgent(opts: {
           };
           proposedActions.push(action);
           toolLog.push(`propose ${action.resourceType}: ${action.summary}`);
-          events.push({ kind: "propose", label: `propose ${action.resourceType}`, detail: action.summary, status: "ok" });
+          pushEvent({ kind: "propose", label: `propose ${action.resourceType}`, detail: action.summary, status: "ok" });
           push("Queued for clinician confirmation. NOT yet written.");
         } else {
           push(`Unknown tool: ${tc.function.name}`);
         }
       } catch (e) {
-        events.push({ kind: "fhir", label: `${tc.function.name} failed`, detail: e instanceof Error ? e.message : String(e), status: "error" });
+        pushEvent({ kind: "fhir", label: `${tc.function.name} failed`, detail: e instanceof Error ? e.message : String(e), status: "error" });
         push(`Error: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
