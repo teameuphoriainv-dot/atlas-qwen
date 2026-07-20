@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Sparkles, Send, FlaskConical, ListPlus, Activity, FileText, ShieldAlert, ClipboardList, Camera } from "lucide-react";
+import { Sparkles, Send, FlaskConical, ListPlus, Activity, FileText, ShieldAlert, ClipboardList, Camera, Stethoscope, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { mdToHtml } from "@/lib/markdown";
+import { extractEvidence } from "@/lib/agent/evidence";
 import { emit, streamBackendEvents, type BackendEvent } from "@/lib/telemetry";
 import type { PatientContext } from "@/lib/types";
 
@@ -37,6 +38,7 @@ const CHIPS = [
   { icon: Activity, label: "Record a vital", prompt: "Record a blood pressure of 132/86 mmHg." },
   { icon: FlaskConical, label: "Order a CBC", prompt: "Order a CBC with differential." },
   { icon: ShieldAlert, label: "Find care gaps", prompt: "Review this patient for care gaps and propose any overdue orders to close them." },
+  { icon: Stethoscope, label: "Tiered differential", prompt: "Based only on this chart, give a tiered differential for the patient's active issues: Most Likely, Expanded, and Can't-Miss. One line each with the single best next diagnostic step. Cite chart evidence." },
   { icon: ClipboardList, label: "Progress note", prompt: "Write a concise SOAP progress note for today's visit based on the chart." },
 ];
 
@@ -297,10 +299,27 @@ export function AgentChat({ patientId, patientName, context, onWriteComplete }: 
                         ))}
                       </div>
                     )}
-                    <div
-                      className="atlas-prose rounded-lg rounded-bl-sm bg-surface-alt px-3 py-2 text-sm text-text"
-                      dangerouslySetInnerHTML={{ __html: mdToHtml(m.text) }}
-                    />
+                    {(() => {
+                      const ev = extractEvidence(m.text);
+                      return (
+                        <>
+                          <div
+                            className="atlas-prose rounded-lg rounded-bl-sm bg-surface-alt px-3 py-2 text-sm text-text"
+                            dangerouslySetInnerHTML={{ __html: mdToHtml(ev.text) }}
+                          />
+                          {ev.refs.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1">
+                              <span className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Evidence</span>
+                              {ev.refs.map((ref) => (
+                                <span key={ref} className="inline-flex items-center gap-1 rounded border border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] text-info">
+                                  <Link2 className="h-2.5 w-2.5" /> {ref}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                     {context && (
                       <button
                         onClick={() => saveNote(i)}
@@ -346,14 +365,31 @@ export function AgentChat({ patientId, patientName, context, onWriteComplete }: 
                         {m.result}
                       </div>
                     ) : (
-                      <div className="flex gap-2">
-                        <Button size="sm" onClick={() => confirm(i)} disabled={m.status === "writing"}>
-                          {m.status === "writing" ? "Writing…" : `Confirm ${m.actions.length}`}
-                        </Button>
-                        <Button size="sm" variant="destructive" onClick={() => reject(i)}>
-                          Reject
-                        </Button>
-                      </div>
+                      (() => {
+                        const flagged = m.actions.some((a) => a.safety?.verdict === "block");
+                        return (
+                          <div className="flex flex-col gap-1">
+                            {flagged && (
+                              <div className="text-[11px] font-medium text-error">
+                                The Safety Sentinel flagged item(s) above. Review the reasons before confirming.
+                              </div>
+                            )}
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant={flagged ? "destructive" : "primary"}
+                                onClick={() => confirm(i)}
+                                disabled={m.status === "writing"}
+                              >
+                                {m.status === "writing" ? "Writing…" : flagged ? "Confirm anyway" : `Confirm ${m.actions.length}`}
+                              </Button>
+                              <Button size="sm" variant="destructive" onClick={() => reject(i)}>
+                                Reject
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })()
                     )}
                   </div>
                 )}

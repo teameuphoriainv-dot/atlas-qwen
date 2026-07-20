@@ -150,6 +150,17 @@ QWEN_API_KEY=sk-... npx vitest run draftOrders
 - **Cost observability**: per-turn token cost estimates stream into the Live System
   Console next to latency and token counts.
 
+## How Atlas measures against the industry
+
+We benchmarked Atlas against Abridge, Microsoft Dragon Copilot, Ambience, Hippocratic AI,
+Navina, Regard, Suki, Glass Health, OpenEvidence, and Epic's native AI. Atlas implements
+the patterns those leaders converge on: draft-not-commit, a supervisory model tier
+(Hippocratic's "constellation" thesis), task-routed models, per-claim evidence provenance
+(Abridge "Linked Evidence" style [Type/id] citations rendered as chips), chart-aware
+reasoning, tiered differentials with a can't-miss safety net (Glass), automation-bias
+guards, and tamper-evident auditability. Full honest scorecard, including what we
+deliberately do NOT claim: [`docs/industry-benchmark.md`](docs/industry-benchmark.md).
+
 ## Demo
 
 See [`docs/demo-script.md`](docs/demo-script.md). The web demo runs on synthetic/mock
