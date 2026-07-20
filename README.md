@@ -1,10 +1,14 @@
 # Atlas: Autonomous EHR Copilot on Qwen
 
+![CI](https://github.com/teameuphoriainv-dot/atlas-qwen/actions/workflows/ci.yml/badge.svg)
+
 > Say the order. Atlas does the work. You confirm the writes.
 
 **Global AI Hackathon with Qwen Cloud. Track 4: Autopilot Agent.**
 
 **Live demo: https://atlas-qwen.vercel.app** (synthetic patients; zero setup)
+
+![Atlas live demo: the first-run tour over the EHR workspace](docs/assets/atlas-demo.png)
 
 Atlas automates a real clinical business workflow end-to-end: a clinician types (or speaks)
 plain-English intent, *"order a CBC and start metformin 500mg BID"*, *"any care gaps?"*,
@@ -96,6 +100,37 @@ time. Deeper details: [`docs/architecture.md`](docs/architecture.md).
 - **Next.js 16** (App Router) + **Tailwind v4**, API routes only (no DB; in-memory audit)
 - **FHIR R4**: public HAPI sandbox (synthetic patients, zero real PHI) + Epic sandbox
   through the Chrome extension's SMART-on-FHIR (PKCE) token
+
+## MCP server: Atlas as infrastructure
+
+Atlas's PHI-safe clinical toolset is also exposed over the **Model Context Protocol**,
+so any MCP-capable agent (a Qwen agent on Model Studio, Claude, an IDE assistant) can
+work with a FHIR chart through the exact same safety machinery the UI uses: sanitized
+reads, write-boundary validation, and Safety Sentinel reviews. Writes are never
+executed over MCP: the human confirm gate is an architectural invariant, not a UI
+detail.
+
+```bash
+npm run mcp   # stdio transport
+```
+
+Tools: `read_chart`, `search_fhir`, `read_fhir`, `validate_fhir_resource`,
+`safety_review`. Example client config:
+
+```json
+{
+  "mcpServers": {
+    "atlas-fhir": {
+      "command": "npm",
+      "args": ["run", "mcp"],
+      "cwd": "/path/to/atlas-qwen",
+      "env": { "NEXT_PUBLIC_USE_MOCK_FHIR": "true" }
+    }
+  }
+}
+```
+
+Source: [`src/mcp/server.ts`](src/mcp/server.ts).
 
 ## Setup
 

@@ -128,7 +128,7 @@ export function runRuleChecks(
       reasons.push(`Code ${code} already present on the chart (possible duplicate)`);
     }
 
-    return { verdict, reasons };
+    return { verdict, reasons: [...new Set(reasons)] };
   });
 }
 
