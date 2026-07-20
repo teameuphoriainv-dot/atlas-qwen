@@ -141,6 +141,14 @@ QWEN_API_KEY=sk-... npx vitest run draftOrders
   a silent pass, and the human confirm gate always stands.
 - **Deterministic rule layer**: allergy and duplicate checks run in code (unit-tested),
   independent of any model.
+- **Write-boundary validation**: a structural FHIR validator gates every confirmed write;
+  malformed model output is rejected before it can reach the FHIR server.
+- **Tamper-evident audit**: the audit log is SHA-256 hash-chained; `/api/audit` returns a
+  chain verification, so any mutation or deletion of history is detectable.
+- **Resilience**: every Qwen call runs behind timeout + bounded retry with exponential
+  backoff + a shared circuit breaker, so upstream trouble degrades gracefully.
+- **Cost observability**: per-turn token cost estimates stream into the Live System
+  Console next to latency and token counts.
 
 ## Demo
 
