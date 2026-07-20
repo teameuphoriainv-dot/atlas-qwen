@@ -8,6 +8,7 @@ import React from "react";
 import { interpolate, useCurrentFrame } from "remotion";
 import { AT } from "./atlas";
 import { FONTS } from "./theme";
+import { AtlasMark } from "./logo";
 
 export const sans = FONTS.dmsans;
 export const mono = FONTS.mono;
@@ -153,9 +154,9 @@ export const AtlasPanel: React.FC<{ children: React.ReactNode; width?: number; s
     width, background: AT.surface, borderRadius: 14, overflow: "hidden",
     boxShadow: "0 30px 80px rgba(15,30,35,0.32)", border: `1px solid ${AT.line}`,
   }}>
-    <div style={{ background: AT.teal, color: "#fff", padding: "13px 18px", display: "flex", alignItems: "center", gap: 10, fontFamily: sans }}>
-      <div style={{ width: 24, height: 24, borderRadius: 7, border: "2px solid rgba(255,255,255,0.85)", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 13 }}>A</div>
-      <span style={{ fontWeight: 700, fontSize: 17 }}>Atlas</span>
+    <div style={{ background: AT.teal, color: "#fff", padding: "12px 18px", display: "flex", alignItems: "center", gap: 11, fontFamily: sans }}>
+      <AtlasMark size={26} stroke="#ffffff" />
+      <span style={{ fontWeight: 700, fontSize: 17, letterSpacing: "-0.02em" }}>Atlas</span>
       <span style={{ fontSize: 13, color: "rgba(255,255,255,0.6)" }}>{subtitle}</span>
     </div>
     <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>{children}</div>

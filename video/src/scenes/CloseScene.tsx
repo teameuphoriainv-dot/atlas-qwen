@@ -4,6 +4,7 @@ import { AbsoluteFill, interpolate, useCurrentFrame } from "remotion";
 import { SceneWrap, Reveal, Particles } from "../lib/kit";
 import { AT } from "../lib/atlas";
 import { sans, mono } from "../lib/ui";
+import { AtlasMark } from "../lib/logo";
 
 const DUR = 300;
 
@@ -32,13 +33,9 @@ export const CloseScene: React.FC = () => {
           </Reveal>
 
           <Reveal start={78}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 18, marginTop: 48 }}>
-              <div style={{
-                width: 58, height: 58, borderRadius: 16, border: "3px solid rgba(255,255,255,0.9)",
-                display: "grid", placeItems: "center", color: "#fff", fontSize: 30, fontWeight: 800,
-                boxShadow: `0 0 ${34 * glow}px rgba(203,227,233,${0.5 * glow})`,
-              }}>A</div>
-              <div style={{ fontSize: 60, fontWeight: 700, color: "#fff", letterSpacing: "-0.03em" }}>Atlas</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 20, marginTop: 48 }}>
+              <AtlasMark size={62} stroke="#ffffff" glow={glow} />
+              <div style={{ fontSize: 62, fontWeight: 600, color: "#fff", letterSpacing: "-0.035em", fontFamily: sans }}>Atlas</div>
             </div>
           </Reveal>
 
