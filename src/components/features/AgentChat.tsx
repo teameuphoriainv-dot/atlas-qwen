@@ -143,11 +143,15 @@ export function AgentChat({ patientId, patientName, context, onWriteComplete }: 
         const u = d.usage ?? {};
         const total = (u.inputTokens ?? 0) + (u.outputTokens ?? 0);
         if (total) {
+          const cost =
+            typeof u.estCostUsd === "number" && u.estCostUsd > 0
+              ? ` · ~$${u.estCostUsd >= 0.01 ? u.estCostUsd.toFixed(3) : u.estCostUsd.toFixed(4)}`
+              : "";
           window.setTimeout(
             () =>
               emit({
                 kind: "info",
-                label: `${total.toLocaleString()} tokens · ${u.rounds ?? 0} round(s)`,
+                label: `${total.toLocaleString()} tokens · ${u.rounds ?? 0} round(s)${cost}`,
                 detail: `${u.inputTokens ?? 0} in / ${u.outputTokens ?? 0} out`,
               }),
             (d.events.length + 1) * 100,

@@ -75,6 +75,10 @@ export interface AuditEntry {
   patientRef: string;
   action: "drafted" | "confirmed" | "rejected" | "write_failed";
   orderSummaries: string[];
+  /** Tamper-evident hash chain (SHA-256 over the entry + previous hash). */
+  seq?: number;
+  prevHash?: string;
+  hash?: string;
 }
 
 /** Lightweight patient list item for the picker. */

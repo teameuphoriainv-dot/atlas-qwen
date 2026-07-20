@@ -1,5 +1,7 @@
 import type OpenAI from "openai";
 import { qwenClient } from "@/lib/llm/qwen";
+import { withResilience } from "@/lib/llm/resilience";
+import { estimateCostUsd } from "@/lib/llm/pricing";
 import { routeAgentModel } from "@/lib/llm/router";
 import { FHIR_TOOLS, buildAgentSystemPrompt } from "./fhirTools";
 import { sanitize, sanitizeBundle } from "./sanitize";
@@ -28,7 +30,7 @@ export interface AgentTurn {
   proposedActions: ProposedAction[];
   toolLog: string[]; // human-readable trace for the UI
   events: AgentEvent[]; // structured trace for the Live System Console
-  usage: { inputTokens: number; outputTokens: number; rounds: number };
+  usage: { inputTokens: number; outputTokens: number; rounds: number; estCostUsd: number };
 }
 
 type Msg = OpenAI.Chat.Completions.ChatCompletionMessageParam;
@@ -64,6 +66,7 @@ export async function runAgent(opts: {
   let inputTokens = 0;
   let outputTokens = 0;
   let rounds = 0;
+  let estCostUsd = 0;
 
   events.push({
     kind: "route",
@@ -139,21 +142,30 @@ export async function runAgent(opts: {
       proposedActions,
       toolLog,
       events,
-      usage: { inputTokens, outputTokens, rounds },
+      usage: { inputTokens, outputTokens, rounds, estCostUsd },
     };
   }
 
   for (let round = 0; round < 5; round++) {
     const roundStart = Date.now();
-    const resp = await client.chat.completions.create({
-      model: AGENT_MODEL,
-      max_tokens: 1500,
-      tools: FHIR_TOOLS,
-      messages,
-    });
+    const resp = await withResilience(
+      () =>
+        client.chat.completions.create({
+          model: AGENT_MODEL,
+          max_tokens: 1500,
+          tools: FHIR_TOOLS,
+          messages,
+        }),
+      { timeoutMs: 30_000, retries: 1 },
+    );
     rounds++;
     inputTokens += resp.usage?.prompt_tokens ?? 0;
     outputTokens += resp.usage?.completion_tokens ?? 0;
+    estCostUsd += estimateCostUsd(
+      AGENT_MODEL,
+      resp.usage?.prompt_tokens ?? 0,
+      resp.usage?.completion_tokens ?? 0,
+    );
     events.push({
       kind: "reason",
       label: `reasoning round ${round + 1}`,

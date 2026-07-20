@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { addAudit, listAudit } from "@/lib/audit/log";
+import { addAudit, listAudit, verifyAuditChain } from "@/lib/audit/log";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  return NextResponse.json({ entries: listAudit() });
+  const entries = listAudit();
+  return NextResponse.json({ entries, chain: verifyAuditChain(entries) });
 }
 
 const rejectSchema = z.object({

@@ -1,5 +1,6 @@
 import type OpenAI from "openai";
 import { qwenClient } from "@/lib/llm/qwen";
+import { withResilience } from "@/lib/llm/resilience";
 import type { ProposedAction } from "./runAgent";
 
 /**
@@ -200,21 +201,20 @@ export async function runModelReview(
   };
 
   try {
-    const resp = await Promise.race([
-      client.chat.completions.create({
-        model,
-        max_tokens: 900,
-        tools: [REVIEW_TOOL],
-        tool_choice: { type: "function", function: { name: "submit_review" } },
-        messages: [
-          { role: "system", content: SENTINEL_SYSTEM },
-          { role: "user", content: JSON.stringify(payload) },
-        ],
-      }),
-      new Promise<never>((_, rej) =>
-        setTimeout(() => rej(new Error("sentinel timeout")), timeoutMs),
-      ),
-    ]);
+    const resp = await withResilience(
+      () =>
+        client.chat.completions.create({
+          model,
+          max_tokens: 900,
+          tools: [REVIEW_TOOL],
+          tool_choice: { type: "function", function: { name: "submit_review" } },
+          messages: [
+            { role: "system", content: SENTINEL_SYSTEM },
+            { role: "user", content: JSON.stringify(payload) },
+          ],
+        }),
+      { timeoutMs, retries: 0 },
+    );
 
     const msg = resp.choices[0]?.message;
     const tc = msg?.tool_calls?.find(

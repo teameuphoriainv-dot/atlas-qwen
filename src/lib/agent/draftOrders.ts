@@ -1,4 +1,5 @@
 import { qwenClient, qwenModels } from "@/lib/llm/qwen";
+import { withResilience } from "@/lib/llm/resilience";
 import { buildSystemPrompt, buildUserMessage } from "./prompt";
 import { SUBMIT_ORDERS_TOOL } from "./tools";
 import type { DraftOrder, ModelContext } from "@/lib/types";
@@ -42,16 +43,20 @@ export async function draftOrders(
 ): Promise<DraftResult> {
   const client = qwenClient();
 
-  const response = await client.chat.completions.create({
-    model: qwenModels().draft,
-    max_tokens: 1500,
-    tools: [SUBMIT_ORDERS_TOOL],
-    tool_choice: { type: "function", function: { name: "submit_orders" } },
-    messages: [
-      { role: "system", content: buildSystemPrompt() },
-      { role: "user", content: buildUserMessage(text, ctx) },
-    ],
-  });
+  const response = await withResilience(
+    () =>
+      client.chat.completions.create({
+        model: qwenModels().draft,
+        max_tokens: 1500,
+        tools: [SUBMIT_ORDERS_TOOL],
+        tool_choice: { type: "function", function: { name: "submit_orders" } },
+        messages: [
+          { role: "system", content: buildSystemPrompt() },
+          { role: "user", content: buildUserMessage(text, ctx) },
+        ],
+      }),
+    { timeoutMs: 40_000, retries: 1 },
+  );
 
   const msg = response.choices[0]?.message;
   const toolCall = msg?.tool_calls?.find(

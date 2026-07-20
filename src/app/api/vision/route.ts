@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { qwenClient, qwenModels } from "@/lib/llm/qwen";
+import { withResilience } from "@/lib/llm/resilience";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -58,19 +59,23 @@ export async function POST(req: NextRequest) {
         ? MEDS_PROMPT
         : "Transcribe ALL text visible in this image exactly as written, preserving line breaks and layout order. " +
           "Output ONLY the transcribed text — no commentary, no markdown fences.";
-    const resp = await client.chat.completions.create({
-      model: qwenModels().vision,
-      max_tokens: 2000,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: dataUrl } },
+    const resp = await withResilience(
+      () =>
+        client.chat.completions.create({
+          model: qwenModels().vision,
+          max_tokens: 2000,
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: prompt },
+                { type: "image_url", image_url: { url: dataUrl } },
+              ],
+            },
           ],
-        },
-      ],
-    });
+        }),
+      { timeoutMs: 45_000, retries: 1 },
+    );
     const text = (resp.choices[0]?.message?.content ?? "").trim();
     if (mode === "meds") {
       return NextResponse.json({ text, meds: parseMeds(text) });

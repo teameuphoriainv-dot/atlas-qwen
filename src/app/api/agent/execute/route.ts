@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { makeBuiltinFhir, makeRemoteFhir } from "@/lib/fhir/remote";
+import { validateResource } from "@/lib/fhir/validate";
 import { addAudit } from "@/lib/audit/log";
 
 export const dynamic = "force-dynamic";
@@ -45,6 +46,17 @@ export async function POST(req: NextRequest) {
 
   for (const a of actions) {
     try {
+      // Deterministic structural gate: never send a malformed resource to FHIR,
+      // no matter what the model produced upstream.
+      const check = validateResource(a.resourceType, a.resource);
+      if (!check.valid) {
+        errors.push({
+          resourceType: a.resourceType,
+          summary: a.summary,
+          error: `Rejected by validator: ${check.errors.join("; ")}`,
+        });
+        continue;
+      }
       const body = withSubject(a.resourceType, a.resource, patientId);
       const created = await client.create(a.resourceType, body);
       written.push({ resourceType: a.resourceType, id: created.id, summary: a.summary });
